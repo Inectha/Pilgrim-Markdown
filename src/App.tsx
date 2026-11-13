@@ -62,16 +62,54 @@ const WorkspaceShell: React.FC = () => {
   const [helpOpen, setHelpOpen] = useState<boolean>(false);
   const [paletteOpen, setPaletteOpen] = useState<boolean>(false);
   const [zenHintVisible, setZenHintVisible] = useState<boolean>(false);
+  const [zenScrollbarVisible, setZenScrollbarVisible] = useState<boolean>(false);
+  const scrollbarHideTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!zenMode) {
       setZenHintVisible(false);
+      setZenScrollbarVisible(false);
+      if (scrollbarHideTimerRef.current !== null) {
+        window.clearTimeout(scrollbarHideTimerRef.current);
+        scrollbarHideTimerRef.current = null;
+      }
       return;
     }
     setZenHintVisible(true);
     const timer = window.setTimeout(() => setZenHintVisible(false), 2500);
     return () => window.clearTimeout(timer);
   }, [zenMode]);
+
+  const scheduleScrollbarHide = useCallback(() => {
+    if (scrollbarHideTimerRef.current !== null) return;
+    scrollbarHideTimerRef.current = window.setTimeout(() => {
+      scrollbarHideTimerRef.current = null;
+      setZenScrollbarVisible(false);
+    }, 1200);
+  }, []);
+
+  const handleWorkspaceMouseMove = useCallback(
+    (e: React.MouseEvent<HTMLElement>) => {
+      if (!zenMode) return;
+      const rect = e.currentTarget.getBoundingClientRect();
+      const nearRightEdge = rect.right - e.clientX <= 24;
+      const nearSplitEdge =
+        viewMode === 'split' &&
+        e.clientX <= rect.left + rect.width / 2 &&
+        rect.left + rect.width / 2 - e.clientX <= 24;
+
+      if (nearRightEdge || nearSplitEdge) {
+        if (scrollbarHideTimerRef.current !== null) {
+          window.clearTimeout(scrollbarHideTimerRef.current);
+          scrollbarHideTimerRef.current = null;
+        }
+        setZenScrollbarVisible(true);
+      } else if (zenScrollbarVisible) {
+        scheduleScrollbarHide();
+      }
+    },
+    [zenMode, viewMode, zenScrollbarVisible, scheduleScrollbarHide]
+  );
 
   useEffect(() => {
     const onGlobalKeyDown = (e: KeyboardEvent) => {
@@ -279,7 +317,7 @@ const WorkspaceShell: React.FC = () => {
         handleFileDrop(e);
       }}
       className={`flex h-screen w-screen flex-col overflow-hidden bg-[var(--md-surface)] text-[var(--md-on-surface)] ${
-        zenMode ? 'zen-mode' : ''
+        zenMode ? (zenScrollbarVisible ? 'zen-mode zen-scrollbar-visible' : 'zen-mode') : ''
       }`}
     >
       <a
@@ -342,7 +380,14 @@ const WorkspaceShell: React.FC = () => {
       )}
 
       {/* Main Dual-Pane Workspace */}
-      <main id="editor-workspace" className="relative flex min-h-0 flex-1 overflow-hidden">
+      <main
+        id="editor-workspace"
+        onMouseMove={handleWorkspaceMouseMove}
+        onMouseLeave={() => {
+          if (zenMode && zenScrollbarVisible) scheduleScrollbarHide();
+        }}
+        className="relative flex min-h-0 flex-1 overflow-hidden"
+      >
         {isDraggingOver && (
           <div className="no-print pointer-events-none absolute inset-3 z-30 flex items-center justify-center rounded-2xl border-2 border-dashed border-[var(--md-primary)] bg-[var(--md-surface)]/85 backdrop-blur-xs">
             <div className="text-center">

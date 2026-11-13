@@ -402,7 +402,7 @@ header.wco-active {
   }
 }
 
-/* Focus / Zen Mode: keep scrollbars functional while invisible until hovered */
+/* Focus / Zen Mode: keep scrollbars functional while invisible until cursor points at the scrollbar */
 @supports not selector(::-webkit-scrollbar) {
   .zen-mode .cm-scroller,
   .zen-mode .preview-pane {
@@ -410,9 +410,9 @@ header.wco-active {
     scrollbar-color: transparent transparent;
   }
 
-  .zen-mode .cm-scroller:hover,
-  .zen-mode .preview-pane:hover {
-    scrollbar-color: color-mix(in srgb, var(--md-on-surface-variant) 40%, transparent) transparent;
+  .zen-mode.zen-scrollbar-visible .cm-scroller,
+  .zen-mode.zen-scrollbar-visible .preview-pane {
+    scrollbar-color: color-mix(in srgb, var(--md-on-surface-variant) 45%, transparent) transparent;
   }
 }
 
@@ -433,12 +433,12 @@ header.wco-active {
   border-radius: 9999px;
 }
 
-.zen-mode .cm-scroller:hover::-webkit-scrollbar-thumb,
-.zen-mode .preview-pane:hover::-webkit-scrollbar-thumb {
-  background-color: color-mix(in srgb, var(--md-on-surface-variant) 35%, transparent);
+.zen-mode.zen-scrollbar-visible .cm-scroller::-webkit-scrollbar-thumb,
+.zen-mode.zen-scrollbar-visible .preview-pane::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, var(--md-on-surface-variant) 38%, transparent);
 }
 
-.zen-mode .cm-scroller::-webkit-scrollbar-thumb:hover,
-.zen-mode .preview-pane::-webkit-scrollbar-thumb:hover {
+.zen-mode.zen-scrollbar-visible .cm-scroller::-webkit-scrollbar-thumb:hover,
+.zen-mode.zen-scrollbar-visible .preview-pane::-webkit-scrollbar-thumb:hover {
   background-color: color-mix(in srgb, var(--md-on-surface-variant) 65%, transparent);
 }

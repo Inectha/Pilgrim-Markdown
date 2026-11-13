@@ -278,7 +278,9 @@ const WorkspaceShell: React.FC = () => {
         setIsDraggingOver(false);
         handleFileDrop(e);
       }}
-      className="flex h-screen w-screen flex-col overflow-hidden bg-[var(--md-surface)] text-[var(--md-on-surface)]"
+      className={`flex h-screen w-screen flex-col overflow-hidden bg-[var(--md-surface)] text-[var(--md-on-surface)] ${
+        zenMode ? 'zen-mode' : ''
+      }`}
     >
       <a
         href="#editor-workspace"

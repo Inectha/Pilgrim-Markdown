@@ -5,25 +5,26 @@
 
   <p>
     <a href="https://inectha.github.io/Pilgrim-Markdown/">
-      <img src="https://img.shields.io/badge/Launch_App-Pilgrim_Markdown-6750A4?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Launch Pilgrim Markdown" />
+      <img src="https://img.shields.io/badge/Launch_App-Pilgrim_Markdown-6750A4?style=plastic&logo=googlechrome&logoColor=white" alt="Launch Pilgrim Markdown" />
     </a>
   </p>
 
   <p>
     <a href="https://github.com/Inectha/Pilgrim-Markdown/actions/workflows/deploy.yml">
-      <img src="https://img.shields.io/github/actions/workflow/status/Inectha/Pilgrim-Markdown/deploy.yml?branch=main&style=flat-square&label=build%20%26%20deploy" alt="Build and Deploy status" />
+      <img src="https://img.shields.io/github/actions/workflow/status/Inectha/Pilgrim-Markdown/deploy.yml?branch=main&style=plastic&logo=githubactions&logoColor=white&label=Build%20%26%20Deploy" alt="Build and Deploy status" />
     </a>
-    <a href="https://github.com/Inectha/Pilgrim-Markdown/releases">
-      <img src="https://img.shields.io/github/v/release/Inectha/Pilgrim-Markdown?style=flat-square&color=4CAF50" alt="Latest Release" />
-    </a>
+    <img src="https://img.shields.io/badge/ChromeOS-PWA_%26_Desktop-1A73E8?style=plastic&logo=googlechrome&logoColor=white" alt="ChromeOS PWA and Desktop" />
+    <img src="https://img.shields.io/badge/Offline-100%25_Ready-2E7D32?style=plastic&logo=pwa&logoColor=white" alt="100% Offline Ready" />
+    <img src="https://img.shields.io/badge/TypeScript-React_19-20232A?style=plastic&logo=react&logoColor=61DAFB" alt="TypeScript and React 19" />
+  </p>
+
+  <p>
     <a href="./LICENSE">
-      <img src="https://img.shields.io/badge/license-MIT_(Code)-blue?style=flat-square" alt="MIT License (Code)" />
+      <img src="https://img.shields.io/badge/License-MIT_(Code)-4A4458?style=plastic&logo=opensourceinitiative&logoColor=white" alt="MIT License (Code)" />
     </a>
     <a href="./TRADEMARKS.md">
-      <img src="https://img.shields.io/badge/brand_%26_logo-All_Rights_Reserved-orange?style=flat-square" alt="Brand & Logo All Rights Reserved" />
+      <img src="https://img.shields.io/badge/Brand_%26_Logo-All_Rights_Reserved-7C3AED?style=plastic&logo=shield&logoColor=white" alt="Brand and Logo All Rights Reserved" />
     </a>
-    <img src="https://img.shields.io/badge/platform-ChromeOS_PWA_%7C_Desktop-6750A4?style=flat-square" alt="ChromeOS PWA & Desktop" />
-    <img src="https://img.shields.io/badge/offline-100%25_Service_Worker-2E7D32?style=flat-square" alt="100% Offline" />
   </p>
 </div>
 

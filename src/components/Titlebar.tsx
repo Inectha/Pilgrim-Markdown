@@ -146,14 +146,8 @@ export const Titlebar: React.FC<TitlebarProps> = ({
         wcoVisible ? 'wco-active' : ''
       }`}
     >
-      {/* Left: App icon, filename & save status */}
+      {/* Left: Filename & save status */}
       <div className="flex min-w-0 items-center gap-2.5">
-        <img
-          src="./icons/icon-192.png"
-          alt="Pilgrim Markdown"
-          className="h-7 w-7 shrink-0 rounded-lg object-contain"
-        />
-
         <div className="flex min-w-0 flex-col">
           <div className="flex min-w-0 items-center gap-2">
             {editingName && !handle ? (

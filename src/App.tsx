@@ -61,6 +61,17 @@ const WorkspaceShell: React.FC = () => {
   const [isDraggingOver, setIsDraggingOver] = useState<boolean>(false);
   const [helpOpen, setHelpOpen] = useState<boolean>(false);
   const [paletteOpen, setPaletteOpen] = useState<boolean>(false);
+  const [zenHintVisible, setZenHintVisible] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!zenMode) {
+      setZenHintVisible(false);
+      return;
+    }
+    setZenHintVisible(true);
+    const timer = window.setTimeout(() => setZenHintVisible(false), 2500);
+    return () => window.clearTimeout(timer);
+  }, [zenMode]);
 
   useEffect(() => {
     const onGlobalKeyDown = (e: KeyboardEvent) => {
@@ -380,16 +391,26 @@ const WorkspaceShell: React.FC = () => {
           </section>
         )}
 
-        {/* Floating exit Zen mode button */}
+        {/* Floating exit Zen mode button (fades out after 2.5s; reappears on corner hover/focus) */}
         {zenMode && (
-          <button
-            type="button"
-            onClick={() => setZenMode(false)}
-            title="Exit Focus Mode (Esc)"
-            className="no-print fixed right-4 top-3 z-30 rounded-full border border-[var(--md-outline-variant)] bg-[var(--md-surface-container)]/90 px-3 py-1 text-xs font-medium text-[var(--md-on-surface)] opacity-70 shadow-md backdrop-blur-xs transition-opacity hover:bg-[var(--md-surface-variant)] hover:opacity-100"
+          <div
+            onMouseEnter={() => setZenHintVisible(true)}
+            onMouseLeave={() => setZenHintVisible(false)}
+            className="no-print fixed right-0 top-0 z-30 p-3 pr-4"
           >
-            Exit Focus Mode (Esc)
-          </button>
+            <button
+              type="button"
+              onClick={() => setZenMode(false)}
+              onFocus={() => setZenHintVisible(true)}
+              onBlur={() => setZenHintVisible(false)}
+              title="Exit Focus Mode (Esc)"
+              className={`rounded-full border border-[var(--md-outline-variant)] bg-[var(--md-surface-container)]/90 px-3 py-1 text-xs font-medium text-[var(--md-on-surface)] shadow-md backdrop-blur-xs transition-opacity duration-500 hover:bg-[var(--md-surface-variant)] ${
+                zenHintVisible ? 'opacity-90' : 'pointer-events-none opacity-0'
+              }`}
+            >
+              Exit Focus Mode (Esc)
+            </button>
+          </div>
         )}
       </main>
 

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; object-src 'none'; base-uri 'self';"
+    />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#FFFBFE" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1C1B1F" />
+    <meta
+      name="description"
+      content="Fast, offline-first Material Design 3 Markdown editor for ChromeOS"
+    />
+    <link rel="icon" href="./favicon.ico" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <title>Pilgrim Markdown</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

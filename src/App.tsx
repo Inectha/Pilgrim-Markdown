@@ -81,6 +81,17 @@ const WorkspaceShell: React.FC = () => {
     return () => window.removeEventListener('keydown', onGlobalKeyDown, { capture: true });
   }, []);
 
+  useEffect(() => {
+    if (!zenMode) return;
+    const onEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.defaultPrevented && !helpOpen && !paletteOpen) {
+        setZenMode(false);
+      }
+    };
+    window.addEventListener('keydown', onEscape);
+    return () => window.removeEventListener('keydown', onEscape);
+  }, [zenMode, helpOpen, paletteOpen, setZenMode]);
+
   const paletteCommands = useMemo<PaletteCommand[]>(() => {
     const markdownCmds: PaletteCommand[] = SLASH_COMMANDS.map((cmd) => ({
       id: `md-${cmd.id}`,
@@ -270,24 +281,26 @@ const WorkspaceShell: React.FC = () => {
       </a>
 
       {!zenMode && (
-        <Titlebar
-          isDark={isDark}
-          onToggleTheme={cycleTheme}
-          onNewDocument={newDocument}
-          onOpenFile={openFile}
-          onOpenRecent={openFromHandle}
-          onSaveFile={saveFile}
-          onSaveFileAs={saveFileAs}
-          onOpenHelp={() => setHelpOpen(true)}
-        />
-      )}
+        <>
+          <Titlebar
+            isDark={isDark}
+            onToggleTheme={cycleTheme}
+            onNewDocument={newDocument}
+            onOpenFile={openFile}
+            onOpenRecent={openFromHandle}
+            onSaveFile={saveFile}
+            onSaveFileAs={saveFileAs}
+            onOpenHelp={() => setHelpOpen(true)}
+          />
 
-      <Toolbar
-        toc={toc}
-        onFormat={handleFormat}
-        onSelectTocLine={handleSelectTocLine}
-        onOpenPalette={() => setPaletteOpen(true)}
-      />
+          <Toolbar
+            toc={toc}
+            onFormat={handleFormat}
+            onSelectTocLine={handleSelectTocLine}
+            onOpenPalette={() => setPaletteOpen(true)}
+          />
+        </>
+      )}
 
       {/* Crash-recovery banner for orphaned drafts */}
       {recoverableDraft && (
@@ -372,9 +385,10 @@ const WorkspaceShell: React.FC = () => {
           <button
             type="button"
             onClick={() => setZenMode(false)}
-            className="no-print fixed right-4 top-12 z-30 rounded-full border border-[var(--md-outline-variant)] bg-[var(--md-surface-container)] px-3 py-1 text-xs font-medium text-[var(--md-on-surface)] shadow-md hover:bg-[var(--md-surface-variant)]"
+            title="Exit Focus Mode (Esc)"
+            className="no-print fixed right-4 top-3 z-30 rounded-full border border-[var(--md-outline-variant)] bg-[var(--md-surface-container)]/90 px-3 py-1 text-xs font-medium text-[var(--md-on-surface)] opacity-70 shadow-md backdrop-blur-xs transition-opacity hover:bg-[var(--md-surface-variant)] hover:opacity-100"
           >
-            Exit Focus Mode
+            Exit Focus Mode (Esc)
           </button>
         )}
       </main>

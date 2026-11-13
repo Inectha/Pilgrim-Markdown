@@ -362,7 +362,7 @@ const WorkspaceShell: React.FC = () => {
             className={`no-print h-full overflow-hidden ${
               viewMode === 'split'
                 ? 'w-1/2 border-r border-[var(--md-outline-variant)]'
-                : ' mx-auto w-full max-w-4xl'
+                : 'editor-only w-full'
             }`}
           >
             <Editor

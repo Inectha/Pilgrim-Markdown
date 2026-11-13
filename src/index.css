@@ -72,6 +72,11 @@ header.wco-active {
   line-height: 1.65;
 }
 
+.editor-only .cm-content {
+  max-width: 56rem;
+  margin: 0 auto;
+}
+
 .cm-gutters {
   background-color: var(--md-surface) !important;
   color: var(--md-on-surface-variant) !important;
@@ -398,15 +403,17 @@ header.wco-active {
 }
 
 /* Focus / Zen Mode: keep scrollbars functional while invisible until hovered */
-.zen-mode .cm-scroller,
-.zen-mode .preview-pane {
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
-}
+@supports not selector(::-webkit-scrollbar) {
+  .zen-mode .cm-scroller,
+  .zen-mode .preview-pane {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
 
-.zen-mode .cm-scroller:hover,
-.zen-mode .preview-pane:hover {
-  scrollbar-color: color-mix(in srgb, var(--md-on-surface-variant) 40%, transparent) transparent;
+  .zen-mode .cm-scroller:hover,
+  .zen-mode .preview-pane:hover {
+    scrollbar-color: color-mix(in srgb, var(--md-on-surface-variant) 40%, transparent) transparent;
+  }
 }
 
 .zen-mode .cm-scroller::-webkit-scrollbar,
@@ -428,10 +435,10 @@ header.wco-active {
 
 .zen-mode .cm-scroller:hover::-webkit-scrollbar-thumb,
 .zen-mode .preview-pane:hover::-webkit-scrollbar-thumb {
-  background-color: color-mix(in srgb, var(--md-on-surface-variant) 32%, transparent);
+  background-color: color-mix(in srgb, var(--md-on-surface-variant) 35%, transparent);
 }
 
 .zen-mode .cm-scroller::-webkit-scrollbar-thumb:hover,
 .zen-mode .preview-pane::-webkit-scrollbar-thumb:hover {
-  background-color: color-mix(in srgb, var(--md-on-surface-variant) 60%, transparent);
+  background-color: color-mix(in srgb, var(--md-on-surface-variant) 65%, transparent);
 }

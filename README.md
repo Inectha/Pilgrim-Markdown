@@ -42,6 +42,10 @@ Open **[https://inectha.github.io/Pilgrim-Markdown/](https://inectha.github.io/P
 - **100% Offline & Privacy-First:** No accounts, no servers, no telemetry, and no external CDN requests. Fully precached via Service Worker (`vite-plugin-pwa`).
 - **Beginner-Friendly & Fast:** Type `/` anywhere for **slash-command autocompletion**, press `Ctrl+/` (or `Ctrl+Shift+P`) for the **Command Palette**, or press `F1` for the searchable **Help & Cheat Sheet** with one-click snippet insertion.
 - **Powerful Editor & Live Preview:** CodeMirror 6 with Smart Link Paste, synchronized scrolling (`data-source-line`), clickable task lists, copy buttons on code blocks, YAML frontmatter cards, clickable Document Outline (`H1–H3`), and lazy-loaded KaTeX math.
+- **Multi-Tab Workspace & Folder Vault:** Open any local or ChromeOS **Google Drive** folder (`showDirectoryPicker`) in the collapsible sidebar explorer, edit multiple documents in tabs (preserving per-tab undo/redo history), quick-switch files with `Ctrl+P`, and automatically render relative local images (`./assets/diagram.png`) inside the open vault.
+- **Google Drive Cloud Sync (2 Modes):**
+  - **ChromeOS Native DriveFS Sync:** Open a Google Drive folder vault with automatic background change detection (`lastModified` watching) and conflict prompts.
+  - **Direct Browser Cloud Sync:** Optional zero-server OAuth 2.0 + Google Drive REST API v3 (`drive.file` scope) sync with an offline IndexedDB sync queue and remote conflict detection.
 - **Accessible by Design:** Keyboard-navigable UI, focus-trapped modals, ARIA roles, and high-contrast Material Design 3 light & dark themes.
 - **Secure by Design:** Strict Content Security Policy (CSP) and HTML sanitization via `DOMPurify`.
 - **Crash Recovery & Conflict Detection:** Multi-window-safe IndexedDB drafts using the Web Locks API and external file modification checks (`lastModified`) before overwriting.
@@ -52,7 +56,7 @@ Open **[https://inectha.github.io/Pilgrim-Markdown/](https://inectha.github.io/P
 | Shortcut | Action |
 | :--- | :--- |
 | `/` | Open inline Markdown slash-command menu |
-| `Ctrl+/` or `Ctrl+Shift+P` | Open Command Palette |
+| `Ctrl+P` / `Ctrl+/` / `Ctrl+Shift+P` | Quick-switch Vault files & Command Palette |
 | `F1` | Open searchable Help & Cheat Sheet |
 | `Ctrl+S` / `Ctrl+Shift+S` | Save / Save As |
 | `Ctrl+O` | Open file |

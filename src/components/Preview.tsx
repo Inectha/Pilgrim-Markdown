@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef } from 'react';
 import { renderMarkdown, TocItem, BlockedImageItem } from '../utils/markdown';
+import { resolveRelativePath, resolveVaultImageBlobUrl } from '../utils/vault';
 
 export interface PreviewHandle {
   scrollToSourceLine: (zeroBasedLine: number) => void;
@@ -9,12 +10,25 @@ interface PreviewProps {
   markdown: string;
   syncScroll: boolean;
   topVisibleLine: number;
+  vaultHandle?: FileSystemDirectoryHandle | null;
+  activeFilePath?: string;
   onTocUpdate: (toc: TocItem[]) => void;
   onToggleTaskLine: (zeroBasedLine: number) => void;
 }
 
 export const Preview = forwardRef<PreviewHandle, PreviewProps>(
-  ({ markdown, syncScroll, topVisibleLine, onTocUpdate, onToggleTaskLine }, ref) => {
+  (
+    {
+      markdown,
+      syncScroll,
+      topVisibleLine,
+      vaultHandle,
+      activeFilePath,
+      onTocUpdate,
+      onToggleTaskLine,
+    },
+    ref
+  ) => {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const [html, setHtml] = useState<string>('');
     const [blockedImages, setBlockedImages] = useState<BlockedImageItem[]>([]);
@@ -57,22 +71,70 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(
       },
     }));
 
-    // Debounced Markdown -> sanitized HTML + lazy KaTeX render
+    // Debounced Markdown -> sanitized HTML + lazy KaTeX render + Vault relative image resolution
     useEffect(() => {
       let cancelled = false;
+      const createdBlobUrls: string[] = [];
+
       const timer = window.setTimeout(async () => {
         const res = await renderMarkdown(markdown, { mode: 'preview' });
         if (cancelled) return;
-        setHtml(res.html);
-        setBlockedImages(res.blockedImages);
+
+        let finalHtml = res.html;
+        let remainingBlocked = res.blockedImages;
+
+        if (vaultHandle && res.blockedImages.length > 0 && typeof document !== 'undefined') {
+          const tpl = document.createElement('template');
+          tpl.innerHTML = res.html;
+          const placeholders = tpl.content.querySelectorAll<HTMLElement>(
+            'span.blocked-img[data-blocked-src]'
+          );
+          const stillBlocked: BlockedImageItem[] = [];
+
+          for (const span of Array.from(placeholders)) {
+            const rawSrc = span.getAttribute('data-blocked-src') || '';
+            const altText = (span.textContent || '').replace(/^🖼\s*/, '').trim();
+            const relPath = resolveRelativePath(activeFilePath, rawSrc);
+            let blobUrl: string | null = null;
+
+            if (relPath) {
+              blobUrl = await resolveVaultImageBlobUrl(vaultHandle, relPath);
+            }
+
+            if (cancelled) {
+              if (blobUrl) URL.revokeObjectURL(blobUrl);
+              return;
+            }
+
+            if (blobUrl) {
+              createdBlobUrls.push(blobUrl);
+              const img = document.createElement('img');
+              img.src = blobUrl;
+              img.alt = altText;
+              img.loading = 'lazy';
+              span.replaceWith(img);
+            } else {
+              stillBlocked.push({ src: rawSrc, alt: altText });
+            }
+          }
+
+          finalHtml = tpl.innerHTML;
+          remainingBlocked = stillBlocked;
+        }
+
+        setHtml(finalHtml);
+        setBlockedImages(remainingBlocked);
         onTocUpdate(res.toc);
       }, 90);
 
       return () => {
         cancelled = true;
         window.clearTimeout(timer);
+        for (const url of createdBlobUrls) {
+          URL.revokeObjectURL(url);
+        }
       };
-    }, [markdown, onTocUpdate]);
+    }, [markdown, vaultHandle, activeFilePath, onTocUpdate]);
 
     // Sync scroll with Editor top visible line
     useEffect(() => {
@@ -125,8 +187,8 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(
         {blockedImages.length > 0 && !hideImageNotice && (
           <div className="no-print mb-4 flex items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3.5 py-2 text-xs text-amber-900 dark:text-amber-200">
             <span>
-              🔒 <strong>Privacy & Offline mode:</strong> {blockedImages.length} external or relative
-              image(s) are not loaded in single-file mode.
+              🔒 <strong>Privacy & Offline mode:</strong> {blockedImages.length} external or
+              unresolved image(s) are not loaded. Open a Folder Vault to load relative local images.
             </span>
             <button
               type="button"

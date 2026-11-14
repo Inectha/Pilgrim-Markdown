@@ -4,6 +4,11 @@ import { downloadStandaloneHtml, copyForGoogleDocs } from '../utils/exportHtml';
 
 interface TitlebarProps {
   isDark: boolean;
+  sidebarOpen: boolean;
+  vaultName: string | null;
+  onToggleSidebar: () => void;
+  onOpenVaultPicker: () => void;
+  onOpenDriveSync: () => void;
   onToggleTheme: () => void;
   onNewDocument: () => void;
   onOpenFile: () => void;
@@ -15,6 +20,11 @@ interface TitlebarProps {
 
 export const Titlebar: React.FC<TitlebarProps> = ({
   isDark,
+  sidebarOpen,
+  vaultName,
+  onToggleSidebar,
+  onOpenVaultPicker,
+  onOpenDriveSync,
   onToggleTheme,
   onNewDocument,
   onOpenFile,
@@ -146,8 +156,28 @@ export const Titlebar: React.FC<TitlebarProps> = ({
         wcoVisible ? 'wco-active' : ''
       }`}
     >
-      {/* Left: Filename & save status */}
-      <div className="flex min-w-0 items-center gap-2.5">
+      {/* Left: Sidebar toggle, Filename & save status */}
+      <div className="flex min-w-0 items-center gap-2">
+        <button
+          type="button"
+          onClick={onToggleSidebar}
+          aria-label={sidebarOpen ? 'Hide Folder Vault sidebar' : 'Show Folder Vault sidebar'}
+          aria-expanded={sidebarOpen}
+          title={
+            vaultName
+              ? `Folder Vault: ${vaultName} (click to toggle sidebar)`
+              : 'Toggle Folder Vault sidebar'
+          }
+          className={`titlebar-no-drag flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition-colors ${
+            sidebarOpen
+              ? 'bg-[var(--md-secondary-container)] text-[var(--md-on-secondary-container)]'
+              : 'text-[var(--md-on-surface-variant)] hover:bg-[var(--md-surface-variant)] hover:text-[var(--md-on-surface)]'
+          }`}
+        >
+          <span>📁</span>
+          {vaultName && <span className="hidden max-w-[110px] truncate lg:inline">{vaultName}</span>}
+        </button>
+
         <div className="flex min-w-0 flex-col">
           <div className="flex min-w-0 items-center gap-2">
             {editingName && !handle ? (
@@ -254,6 +284,27 @@ export const Titlebar: React.FC<TitlebarProps> = ({
 
           {recentMenuOpen && (
             <div className="absolute right-0 top-full z-40 mt-1.5 w-64 rounded-xl border border-[var(--md-outline-variant)] bg-[var(--md-surface-container)] p-1.5 shadow-lg">
+              <button
+                type="button"
+                onClick={() => {
+                  setRecentMenuOpen(false);
+                  onOpenVaultPicker();
+                }}
+                className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs font-semibold text-[var(--md-primary)] hover:bg-[var(--md-surface-variant)]"
+              >
+                <span>📁 Open Folder Vault…</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setRecentMenuOpen(false);
+                  onOpenDriveSync();
+                }}
+                className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-[var(--md-on-surface)] hover:bg-[var(--md-surface-variant)]"
+              >
+                <span>☁️ Google Drive Cloud Sync…</span>
+              </button>
+              <hr className="my-1 border-[var(--md-outline-variant)]" />
               <div className="px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider text-[var(--md-on-surface-variant)]">
                 Recent files
               </div>

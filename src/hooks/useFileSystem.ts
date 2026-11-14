@@ -39,15 +39,23 @@ function downloadBlobFallback(content: string, fileName: string): void {
   URL.revokeObjectURL(url);
 }
 
-export function useFileSystem() {
+export function useFileSystem(onDropDirectoryHandle?: (dirHandle: FileSystemDirectoryHandle) => void) {
   const {
+    tabs,
+    activeTabId,
     fileName,
     content,
     isDirty,
     handle,
     lastKnownModified,
     autoSaveToDisk,
+    conflictModal,
     loadDocument,
+    openTab,
+    switchTab,
+    newTab,
+    closeTab,
+    updateTabFromDisk,
     markSaved,
     showToast,
     setConflictModal,
@@ -56,19 +64,32 @@ export function useFileSystem() {
   } = useDocument();
 
   const stateRef = useRef({
+    tabs,
+    activeTabId,
     fileName,
     content,
     isDirty,
     handle,
     lastKnownModified,
+    conflictModal,
   });
-  stateRef.current = { fileName, content, isDirty, handle, lastKnownModified };
+  stateRef.current = {
+    tabs,
+    activeTabId,
+    fileName,
+    content,
+    isDirty,
+    handle,
+    lastKnownModified,
+    conflictModal,
+  };
 
   const writeToHandle = useCallback(
     async (
       targetHandle: FileSystemFileHandle,
       textToWrite: string,
-      ignoreConflict: boolean = false
+      ignoreConflict: boolean = false,
+      targetTabId?: string
     ): Promise<boolean> => {
       try {
         const hasPerm = await verifyReadWritePermission(targetHandle, true);
@@ -77,9 +98,12 @@ export function useFileSystem() {
           return false;
         }
 
-        // Check for external modification on disk / Google Drive mount before writing
         const currentFile = await targetHandle.getFile();
-        const expectedMod = stateRef.current.lastKnownModified;
+        const tab = targetTabId
+          ? stateRef.current.tabs.find((t) => t.id === targetTabId)
+          : undefined;
+        const expectedMod = tab ? tab.lastKnownModified : stateRef.current.lastKnownModified;
+
         if (
           !ignoreConflict &&
           expectedMod !== null &&
@@ -91,23 +115,31 @@ export function useFileSystem() {
             description: `"${targetHandle.name}" was modified outside this editor (e.g. via Google Drive or another window). What would you like to do?`,
             onSaveAndContinue: async () => {
               setConflictModal(null);
-              await writeToHandle(targetHandle, textToWrite, true);
+              await writeToHandle(targetHandle, textToWrite, true, targetTabId);
             },
             onDiscardAndContinue: async () => {
               setConflictModal(null);
               const freshFile = await targetHandle.getFile();
               const freshText = await freshFile.text();
-              loadDocument({
-                fileName: targetHandle.name,
-                content: freshText,
-                handle: targetHandle,
-                lastModified: freshFile.lastModified,
-              });
+              if (targetTabId) {
+                updateTabFromDisk(targetTabId, {
+                  content: freshText,
+                  lastModified: freshFile.lastModified,
+                  fileName: targetHandle.name,
+                });
+              } else {
+                loadDocument({
+                  fileName: targetHandle.name,
+                  content: freshText,
+                  handle: targetHandle,
+                  lastModified: freshFile.lastModified,
+                });
+              }
               showToast(`Reloaded "${targetHandle.name}" from disk.`);
             },
             onSaveAsNew: async () => {
               setConflictModal(null);
-              await saveFileAsInternal(textToWrite, `copy-${targetHandle.name}`);
+              await saveFileAsInternal(textToWrite, `copy-${targetHandle.name}`, targetTabId);
             },
             onCancel: () => setConflictModal(null),
           });
@@ -120,6 +152,7 @@ export function useFileSystem() {
 
         const updatedFile = await targetHandle.getFile();
         markSaved({
+          tabId: targetTabId,
           fileName: targetHandle.name,
           handle: targetHandle,
           lastModified: updatedFile.lastModified,
@@ -133,11 +166,15 @@ export function useFileSystem() {
         return false;
       }
     },
-    [loadDocument, markSaved, recordRecentHandle, setConflictModal, showToast]
+    [loadDocument, updateTabFromDisk, markSaved, recordRecentHandle, setConflictModal, showToast]
   );
 
   const saveFileAsInternal = useCallback(
-    async (textToSave: string, suggestedName?: string): Promise<boolean> => {
+    async (
+      textToSave: string,
+      suggestedName?: string,
+      targetTabId?: string
+    ): Promise<boolean> => {
       const targetName = suggestedName || stateRef.current.fileName || 'Untitled.md';
 
       if (typeof window.showSaveFilePicker === 'function') {
@@ -151,6 +188,7 @@ export function useFileSystem() {
           await writable.close();
           const savedFile = await newHandle.getFile();
           markSaved({
+            tabId: targetTabId,
             fileName: newHandle.name,
             handle: newHandle,
             lastModified: savedFile.lastModified,
@@ -168,9 +206,9 @@ export function useFileSystem() {
         }
       }
 
-      // Fallback for Firefox / Safari
       downloadBlobFallback(textToSave, targetName);
       markSaved({
+        tabId: targetTabId,
         fileName: targetName,
         handle: null,
         lastModified: Date.now(),
@@ -182,153 +220,277 @@ export function useFileSystem() {
     [markSaved, recordRecentHandle, showToast]
   );
 
+  const saveTab = useCallback(
+    async (tabId: string): Promise<boolean> => {
+      const tab = stateRef.current.tabs.find((t) => t.id === tabId);
+      if (!tab) return false;
+      if (tab.handle) {
+        const ok = await writeToHandle(tab.handle, tab.content, false, tab.id);
+        if (ok) showToast(`Saved "${tab.handle.name}".`);
+        return ok;
+      }
+      return saveFileAsInternal(tab.content, tab.fileName, tab.id);
+    },
+    [writeToHandle, saveFileAsInternal, showToast]
+  );
+
   const saveFile = useCallback(async (): Promise<boolean> => {
-    const { handle: currentHandle, content: currentContent, fileName: currentName } = stateRef.current;
-    if (currentHandle) {
-      const ok = await writeToHandle(currentHandle, currentContent, false);
-      if (ok) showToast(`Saved "${currentHandle.name}".`);
-      return ok;
-    }
-    return saveFileAsInternal(currentContent, currentName);
-  }, [writeToHandle, saveFileAsInternal, showToast]);
+    return saveTab(stateRef.current.activeTabId);
+  }, [saveTab]);
 
   const saveFileAs = useCallback(async (): Promise<boolean> => {
-    return saveFileAsInternal(stateRef.current.content, stateRef.current.fileName);
+    return saveFileAsInternal(
+      stateRef.current.content,
+      stateRef.current.fileName,
+      stateRef.current.activeTabId
+    );
   }, [saveFileAsInternal]);
 
-  const guardDirtyAction = useCallback(
-    (action: () => void) => {
-      if (!stateRef.current.isDirty) {
-        action();
+  const requestCloseTab = useCallback(
+    (tabId: string) => {
+      const tab = stateRef.current.tabs.find((t) => t.id === tabId);
+      if (!tab) return;
+      const tabDirty = tab.content !== tab.savedContent;
+      if (!tabDirty) {
+        closeTab(tabId);
         return;
       }
+
+      switchTab(tabId);
       setConflictModal({
         kind: 'unsaved-changes',
         title: 'Unsaved changes',
-        description: `There are unsaved changes in "${stateRef.current.fileName}". Would you like to save them first?`,
+        description: `There are unsaved changes in "${tab.fileName}". Would you like to save them before closing this tab?`,
         onSaveAndContinue: async () => {
           setConflictModal(null);
-          const saved = await saveFile();
-          if (saved) action();
+          const saved = await saveTab(tabId);
+          if (saved) closeTab(tabId);
         },
         onDiscardAndContinue: () => {
           setConflictModal(null);
-          action();
+          closeTab(tabId);
         },
         onCancel: () => setConflictModal(null),
       });
     },
-    [saveFile, setConflictModal]
+    [closeTab, switchTab, saveTab, setConflictModal]
   );
 
   const openFromHandle = useCallback(
-    async (targetHandle: FileSystemFileHandle, requestPerm: boolean = true) => {
-      const executeOpen = async () => {
-        try {
-          if (typeof targetHandle.queryPermission === 'function') {
-            const state = await targetHandle.queryPermission({ mode: 'readwrite' });
-            if (state !== 'granted' && requestPerm && typeof targetHandle.requestPermission === 'function') {
-              await targetHandle.requestPermission({ mode: 'readwrite' });
-            }
+    async (
+      targetHandle: FileSystemFileHandle,
+      requestPerm: boolean = true,
+      filePath?: string
+    ) => {
+      try {
+        if (typeof targetHandle.queryPermission === 'function') {
+          const state = await targetHandle.queryPermission({ mode: 'readwrite' });
+          if (
+            state !== 'granted' &&
+            requestPerm &&
+            typeof targetHandle.requestPermission === 'function'
+          ) {
+            await targetHandle.requestPermission({ mode: 'readwrite' });
           }
-          const file = await targetHandle.getFile();
-          const text = await file.text();
-          loadDocument({
-            fileName: targetHandle.name,
-            content: text,
-            handle: targetHandle,
-            lastModified: file.lastModified,
-          });
-          await recordRecentHandle(targetHandle);
-          showToast(`Opened "${targetHandle.name}".`);
-        } catch (err) {
-          if (err instanceof DOMException && err.name === 'NotFoundError') {
-            await forgetRecentHandle(targetHandle);
-            showToast(`"${targetHandle.name}" no longer exists and was removed from recent files.`);
-            return;
-          }
-          showToast(`Could not open "${targetHandle.name}".`);
         }
-      };
-
-      guardDirtyAction(executeOpen);
+        const file = await targetHandle.getFile();
+        const text = await file.text();
+        await openTab({
+          fileName: targetHandle.name,
+          filePath,
+          content: text,
+          handle: targetHandle,
+          lastModified: file.lastModified,
+        });
+        await recordRecentHandle(targetHandle);
+        showToast(`Opened "${targetHandle.name}".`);
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'NotFoundError') {
+          await forgetRecentHandle(targetHandle);
+          showToast(
+            `"${targetHandle.name}" no longer exists and was removed from recent files.`
+          );
+          return;
+        }
+        showToast(`Could not open "${targetHandle.name}".`);
+      }
     },
-    [guardDirtyAction, loadDocument, recordRecentHandle, forgetRecentHandle, showToast]
+    [openTab, recordRecentHandle, forgetRecentHandle, showToast]
   );
 
-  const openFile = useCallback(() => {
-    const executePicker = async () => {
-      if (typeof window.showOpenFilePicker === 'function') {
-        try {
-          const [pickedHandle] = await window.showOpenFilePicker({
-            multiple: false,
-            types: FILE_PICKER_TYPES,
+  const openFile = useCallback(async () => {
+    if (typeof window.showOpenFilePicker === 'function') {
+      try {
+        const pickedHandles = await window.showOpenFilePicker({
+          multiple: true,
+          types: FILE_PICKER_TYPES,
+        });
+        for (const pickedHandle of pickedHandles) {
+          const file = await pickedHandle.getFile();
+          const text = await file.text();
+          await openTab({
+            fileName: pickedHandle.name,
+            content: text,
+            handle: pickedHandle,
+            lastModified: file.lastModified,
           });
-          if (pickedHandle) {
-            const file = await pickedHandle.getFile();
-            const text = await file.text();
-            loadDocument({
-              fileName: pickedHandle.name,
-              content: text,
-              handle: pickedHandle,
-              lastModified: file.lastModified,
-            });
-            await recordRecentHandle(pickedHandle);
-            showToast(`Opened "${pickedHandle.name}".`);
-          }
-        } catch (err) {
-          if (err instanceof DOMException && err.name === 'AbortError') return;
-          showToast('Open file cancelled or failed.');
+          await recordRecentHandle(pickedHandle);
         }
-        return;
+        if (pickedHandles.length === 1) {
+          showToast(`Opened "${pickedHandles[0].name}".`);
+        } else if (pickedHandles.length > 1) {
+          showToast(`Opened ${pickedHandles.length} files in tabs.`);
+        }
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+        showToast('Open file cancelled or failed.');
       }
+      return;
+    }
 
-      // Fallback <input type="file"> for Firefox / Safari
-      const input = document.createElement('input');
-      input.type = 'file';
-      input.accept = '.md,.markdown,.txt,text/markdown,text/plain';
-      input.onchange = async () => {
-        const file = input.files?.[0];
-        if (!file) return;
+    // Fallback <input type="file"> for Firefox / Safari
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.multiple = true;
+    input.accept = '.md,.markdown,.txt,text/markdown,text/plain';
+    input.onchange = async () => {
+      const files = Array.from(input.files ?? []);
+      if (files.length === 0) return;
+      for (const file of files) {
         const text = await file.text();
-        loadDocument({
+        await openTab({
           fileName: file.name,
           content: text,
           handle: null,
           lastModified: file.lastModified,
         });
-        showToast(`Opened "${file.name}" (Download mode).`);
-      };
-      input.click();
+      }
+      showToast(
+        files.length === 1
+          ? `Opened "${files[0].name}" (Download mode).`
+          : `Opened ${files.length} files (Download mode).`
+      );
     };
-
-    guardDirtyAction(executePicker);
-  }, [guardDirtyAction, loadDocument, recordRecentHandle, showToast]);
+    input.click();
+  }, [openTab, recordRecentHandle, showToast]);
 
   const newDocument = useCallback(() => {
-    guardDirtyAction(() => {
+    const { tabs: curTabs, activeTabId: curId } = stateRef.current;
+    const current = curTabs.find((t) => t.id === curId) ?? curTabs[0];
+    if (
+      curTabs.length === 1 &&
+      !current.handle &&
+      !current.filePath &&
+      current.content === current.savedContent
+    ) {
       loadDocument({
         fileName: 'Untitled.md',
         content: '',
         handle: null,
         lastModified: null,
       });
-      showToast('Started new document.');
-    });
-  }, [guardDirtyAction, loadDocument, showToast]);
+    } else {
+      newTab();
+    }
+    showToast('Started new document tab.');
+  }, [loadDocument, newTab, showToast]);
 
   // Optional auto-save to disk (when enabled by user and a valid handle exists)
   useEffect(() => {
     if (!autoSaveToDisk || !isDirty || !handle) return;
     const timer = window.setTimeout(() => {
-      writeToHandle(handle, content, false);
+      void writeToHandle(handle, content, false, activeTabId);
     }, 1500);
     return () => window.clearTimeout(timer);
-  }, [autoSaveToDisk, isDirty, handle, content, writeToHandle]);
+  }, [autoSaveToDisk, isDirty, handle, content, activeTabId, writeToHandle]);
+
+  // External change watcher (Google Drive DriveFS / external editor sync)
+  useEffect(() => {
+    let checking = false;
+
+    const checkExternalModifications = async () => {
+      if (checking) return;
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      if (stateRef.current.conflictModal) return;
+
+      checking = true;
+      try {
+        for (const tab of stateRef.current.tabs) {
+          if (!tab.handle || tab.lastKnownModified === null) continue;
+          try {
+            const diskFile = await tab.handle.getFile();
+            if (diskFile.lastModified === tab.lastKnownModified) continue;
+
+            const tabDirty = tab.content !== tab.savedContent;
+            if (!tabDirty) {
+              const freshText = await diskFile.text();
+              updateTabFromDisk(tab.id, {
+                content: freshText,
+                lastModified: diskFile.lastModified,
+                fileName: tab.handle.name,
+              });
+              showToast(`Synced external changes to "${tab.handle.name}".`);
+            } else if (tab.id === stateRef.current.activeTabId) {
+              const targetHandle = tab.handle;
+              const targetTabId = tab.id;
+              const currentTabContent = tab.content;
+              setConflictModal({
+                kind: 'external-modification',
+                title: 'External sync conflict',
+                description: `"${targetHandle.name}" was updated externally (e.g. via Google Drive) while you have unsaved local edits.`,
+                onSaveAndContinue: async () => {
+                  setConflictModal(null);
+                  await writeToHandle(targetHandle, currentTabContent, true, targetTabId);
+                },
+                onDiscardAndContinue: async () => {
+                  setConflictModal(null);
+                  const freshFile = await targetHandle.getFile();
+                  const freshText = await freshFile.text();
+                  updateTabFromDisk(targetTabId, {
+                    content: freshText,
+                    lastModified: freshFile.lastModified,
+                    fileName: targetHandle.name,
+                  });
+                  showToast(`Reloaded "${targetHandle.name}" from disk.`);
+                },
+                onSaveAsNew: async () => {
+                  setConflictModal(null);
+                  await saveFileAsInternal(
+                    currentTabContent,
+                    `copy-${targetHandle.name}`,
+                    targetTabId
+                  );
+                },
+                onCancel: () => setConflictModal(null),
+              });
+              break;
+            }
+          } catch {
+            // Ignore transient file access errors
+          }
+        }
+      } finally {
+        checking = false;
+      }
+    };
+
+    const onWindowFocus = () => {
+      void checkExternalModifications();
+    };
+
+    window.addEventListener('focus', onWindowFocus);
+    const interval = window.setInterval(() => {
+      void checkExternalModifications();
+    }, 8000);
+
+    return () => {
+      window.removeEventListener('focus', onWindowFocus);
+      window.clearInterval(interval);
+    };
+  }, [updateTabFromDisk, setConflictModal, writeToHandle, saveFileAsInternal, showToast]);
 
   // ChromeOS File Handling API & Shelf Shortcut (?action=new) consumer
   useEffect(() => {
-    // Check initial URL query param on cold start
     const params = new URLSearchParams(window.location.search);
     if (params.get('action') === 'new') {
       window.history.replaceState({}, '', window.location.pathname);
@@ -342,22 +504,14 @@ export function useFileSystem() {
 
     if (typeof window === 'undefined' || !window.launchQueue) return;
 
-    window.launchQueue.setConsumer((launchParams) => {
-      // 1. Incoming file(s) from ChromeOS Files app
+    window.launchQueue.setConsumer(async (launchParams) => {
       if (launchParams.files && launchParams.files.length > 0) {
-        const firstHandle = launchParams.files[0];
-        const multipleCount = launchParams.files.length;
-        openFromHandle(firstHandle, false).then(() => {
-          if (multipleCount > 1) {
-            showToast(
-              `Opened 1 of ${multipleCount} files (open additional files in separate windows).`
-            );
-          }
-        });
+        for (const fileHandle of launchParams.files) {
+          await openFromHandle(fileHandle, false);
+        }
         return;
       }
 
-      // 2. Incoming targetURL with ?action=new from Shelf shortcut
       if (launchParams.targetURL) {
         try {
           const url = new URL(launchParams.targetURL, window.location.origin);
@@ -369,8 +523,6 @@ export function useFileSystem() {
           // Ignore malformed URL
         }
       }
-
-      // 3. Regular focus-existing click on Shelf icon -> strict no-op
     });
   }, []);
 
@@ -380,20 +532,20 @@ export function useFileSystem() {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
         if (e.shiftKey) {
-          saveFileAs();
+          void saveFileAs();
         } else {
-          saveFile();
+          void saveFile();
         }
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {
         e.preventDefault();
-        openFile();
+        void openFile();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [saveFile, saveFileAs, openFile]);
 
-  // Drag & Drop file handler on window (retains write handle via getAsFileSystemHandle on ChromeOS)
+  // Drag & Drop file or folder handler on window
   const handleFileDrop = useCallback(
     async (e: React.DragEvent) => {
       e.preventDefault();
@@ -405,6 +557,10 @@ export function useFileSystem() {
         if (firstItem.kind === 'file' && typeof firstItem.getAsFileSystemHandle === 'function') {
           try {
             const droppedHandle = await firstItem.getAsFileSystemHandle();
+            if (droppedHandle && droppedHandle.kind === 'directory' && onDropDirectoryHandle) {
+              onDropDirectoryHandle(droppedHandle as FileSystemDirectoryHandle);
+              return;
+            }
             if (droppedHandle && droppedHandle.kind === 'file') {
               await openFromHandle(droppedHandle as FileSystemFileHandle, true);
               return;
@@ -415,21 +571,25 @@ export function useFileSystem() {
         }
       }
 
-      const droppedFile = e.dataTransfer?.files?.[0];
-      if (!droppedFile) return;
+      const droppedFiles = Array.from(e.dataTransfer?.files ?? []);
+      if (droppedFiles.length === 0) return;
 
-      guardDirtyAction(async () => {
+      for (const droppedFile of droppedFiles) {
         const text = await droppedFile.text();
-        loadDocument({
+        await openTab({
           fileName: droppedFile.name,
           content: text,
           handle: null,
           lastModified: droppedFile.lastModified,
         });
-        showToast(`Opened "${droppedFile.name}" via Drag & Drop.`);
-      });
+      }
+      showToast(
+        droppedFiles.length === 1
+          ? `Opened "${droppedFiles[0].name}" via Drag & Drop.`
+          : `Opened ${droppedFiles.length} files via Drag & Drop.`
+      );
     },
-    [openFromHandle, guardDirtyAction, loadDocument, showToast]
+    [openFromHandle, openTab, onDropDirectoryHandle, showToast]
   );
 
   return {
@@ -438,6 +598,7 @@ export function useFileSystem() {
     saveFile,
     saveFileAs,
     newDocument,
+    requestCloseTab,
     handleFileDrop,
   };
 }

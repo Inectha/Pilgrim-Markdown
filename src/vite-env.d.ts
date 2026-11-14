@@ -19,6 +19,21 @@ interface FileSystemFileHandle extends FileSystemHandle {
   createWritable(): Promise<FileSystemWritableFileStream>;
 }
 
+interface FileSystemDirectoryHandle extends FileSystemHandle {
+  readonly kind: 'directory';
+  entries(): AsyncIterableIterator<[string, FileSystemDirectoryHandle | FileSystemFileHandle]>;
+  getDirectoryHandle(
+    name: string,
+    options?: { create?: boolean }
+  ): Promise<FileSystemDirectoryHandle>;
+  getFileHandle(name: string, options?: { create?: boolean }): Promise<FileSystemFileHandle>;
+}
+
+interface DirectoryPickerOptions {
+  id?: string;
+  mode?: 'read' | 'readwrite';
+}
+
 interface FileSystemWritableFileStream extends WritableStream {
   write(data: BufferSource | Blob | string): Promise<void>;
   close(): Promise<void>;
@@ -75,6 +90,7 @@ interface DataTransferItem {
 interface Window {
   showOpenFilePicker?: (options?: OpenFilePickerOptions) => Promise<FileSystemFileHandle[]>;
   showSaveFilePicker?: (options?: SaveFilePickerOptions) => Promise<FileSystemFileHandle>;
+  showDirectoryPicker?: (options?: DirectoryPickerOptions) => Promise<FileSystemDirectoryHandle>;
   launchQueue?: LaunchQueue;
 }
 

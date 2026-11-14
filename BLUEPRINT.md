@@ -13,15 +13,17 @@
 ChromeOS lacks a lightweight, fast, offline-first Markdown editor that opens `.md`, `.markdown`, and `.txt` files directly from the native **Files app** (local storage and Google Drive mount) without mandatory cloud accounts, subscriptions, or heavy Electron/Android runtimes.
 
 ### 1.2 Phase 1 Scope (MVP) vs. Future Phases
-| In Scope (Phase 1) | Out of Scope (Phase 2+) |
+| In Scope (Phase 1 & Phase 2) | Out of Scope (Phase 3+) |
 | :--- | :--- |
-| Local & DriveFS `.md`/`.markdown`/`.txt` open, save & drag-and-drop (with handle) | Custom cloud-sync backend / real-time collaboration |
-| Split-pane CodeMirror 6 editor (incl. Smart Link Paste, `/` slash commands, Command Palette) + sanitized Live Preview | Full PKM / wiki-graph / backlinks (Obsidian-style) |
-| GFM (tables, clickable task lists, code blocks with copy button), YAML frontmatter & lazy KaTeX | `share_target` (incoming share via Service Worker POST route) |
-| Clickable Document Outline (TOC `H1–H3`), Recent Files menu (`recent-handles`) & searchable Help modal (`F1`) | Trusted Web Activity (TWA) + Digital Asset Links for Play Store |
-| Material Design 3 light/dark mode + WCO titlebar + keyboard accessibility (focus-trapped modals) | Multiple tabs inside a single window / folder access (`showDirectoryPicker`) |
-| Multi-window-safe IndexedDB crash recovery + conflict detection | Heavy diagram libraries such as Mermaid (> 1 MB, Phase 2 lazy plugin) |
-| Export to `.md`, standalone `.html`, PDF (`@media print`) & "Copy for Google Docs / Gmail" | WYSIWYG rich-text editing (remains pure Markdown source) |
+| Local & DriveFS `.md`/`.markdown`/`.txt` open, save & drag-and-drop (with handle) | Custom Pilgrim-hosted backend / real-time multiplayer |
+| Multi-tab workspace (per-tab CodeMirror `EditorState`) + Folder Vault explorer (`showDirectoryPicker`) + `Ctrl+P` Quick Switcher | Full PKM / wiki-graph / backlinks (Obsidian-style) |
+| Zero-server Google Drive Cloud Sync (DriveFS live change watcher + direct Drive REST API v3 `drive.file` client with offline queue) | `share_target` (incoming share via Service Worker POST route) |
+| Split-pane CodeMirror 6 editor (incl. Smart Link Paste, `/` slash commands, Command Palette) + sanitized Live Preview (with vault relative `blob:` image resolution) | Trusted Web Activity (TWA) + Digital Asset Links for Play Store |
+| GFM (tables, clickable task lists, code blocks with copy button), YAML frontmatter & lazy KaTeX | Heavy diagram libraries such as Mermaid (> 1 MB, lazy plugin) |
+| Clickable Document Outline (TOC `H1–H3`), Recent Files menu (`recent-handles`) & searchable Help modal (`F1`) | WYSIWYG rich-text editing (remains pure Markdown source) |
+| Material Design 3 light/dark mode + WCO titlebar + keyboard accessibility (focus-trapped modals) | |
+| Multi-window-safe IndexedDB workspace crash recovery + conflict detection | |
+| Export to `.md`, standalone `.html`, PDF (`@media print`) & "Copy for Google Docs / Gmail" | |
 
 ---
 

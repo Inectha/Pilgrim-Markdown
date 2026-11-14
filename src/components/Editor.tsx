@@ -36,6 +36,7 @@ export interface EditorHandle {
 }
 
 interface EditorProps {
+  tabId?: string;
   value: string;
   onChange: (next: string) => void;
   onCursorChange: (pos: { line: number; col: number }) => void;
@@ -71,9 +72,12 @@ function slashCommandSource(context: CompletionContext): CompletionResult | null
 }
 
 export const Editor = forwardRef<EditorHandle, EditorProps>(
-  ({ value, onChange, onCursorChange, onTopLineChange }, ref) => {
+  ({ tabId = 'default', value, onChange, onCursorChange, onTopLineChange }, ref) => {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const viewRef = useRef<EditorView | null>(null);
+    const tabStatesRef = useRef<Map<string, EditorState>>(new Map());
+    const currentTabIdRef = useRef<string>(tabId);
+    const createStateRef = useRef<((docText: string) => EditorState) | null>(null);
     const callbacksRef = useRef({ onChange, onCursorChange, onTopLineChange });
     callbacksRef.current = { onChange, onCursorChange, onTopLineChange };
 
@@ -271,47 +275,52 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
         },
       ]);
 
-      const state = EditorState.create({
-        doc: value,
-        extensions: [
-          lineNumbers(),
-          highlightActiveLine(),
-          drawSelection(),
-          history(),
-          highlightSelectionMatches(),
-          EditorView.lineWrapping,
-          syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-          markdown({ codeLanguages: curatedCodeLanguages }),
-          autocompletion({
-            override: [slashCommandSource],
-            activateOnTyping: true,
-            icons: false,
-          }),
-          customShortcuts,
-          keymap.of([
-            ...completionKeymap,
-            ...defaultKeymap,
-            ...historyKeymap,
-            ...searchKeymap,
-            indentWithTab,
-          ]),
-          smartLinkPasteHandler,
-          scrollListener,
-          EditorView.updateListener.of((update) => {
-            if (update.docChanged) {
-              callbacksRef.current.onChange(update.state.doc.toString());
-            }
-            if (update.selectionSet || update.docChanged) {
-              const head = update.state.selection.main.head;
-              const lineObj = update.state.doc.lineAt(head);
-              callbacksRef.current.onCursorChange({
-                line: lineObj.number,
-                col: head - lineObj.from + 1,
-              });
-            }
-          }),
-        ],
-      });
+      const createEditorState = (docText: string): EditorState =>
+        EditorState.create({
+          doc: docText,
+          extensions: [
+            lineNumbers(),
+            highlightActiveLine(),
+            drawSelection(),
+            history(),
+            highlightSelectionMatches(),
+            EditorView.lineWrapping,
+            syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+            markdown({ codeLanguages: curatedCodeLanguages }),
+            autocompletion({
+              override: [slashCommandSource],
+              activateOnTyping: true,
+              icons: false,
+            }),
+            customShortcuts,
+            keymap.of([
+              ...completionKeymap,
+              ...defaultKeymap,
+              ...historyKeymap,
+              ...searchKeymap,
+              indentWithTab,
+            ]),
+            smartLinkPasteHandler,
+            scrollListener,
+            EditorView.updateListener.of((update) => {
+              if (update.docChanged) {
+                callbacksRef.current.onChange(update.state.doc.toString());
+              }
+              if (update.selectionSet || update.docChanged) {
+                const head = update.state.selection.main.head;
+                const lineObj = update.state.doc.lineAt(head);
+                callbacksRef.current.onCursorChange({
+                  line: lineObj.number,
+                  col: head - lineObj.from + 1,
+                });
+              }
+            }),
+          ],
+        });
+
+      createStateRef.current = createEditorState;
+      const state = createEditorState(value);
+      tabStatesRef.current.set(currentTabIdRef.current, state);
 
       const view = new EditorView({
         state,
@@ -324,20 +333,41 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
         view.destroy();
         viewRef.current = null;
       };
-      // Only initialize CodeMirror once; external value changes are synced below
+      // Only initialize CodeMirror once; tab swaps & external value changes are synced below
     }, []);
 
-    // Sync external document loads (e.g. file open, new document, draft restore) into CodeMirror
+    // Swap EditorState when switching tabs (preserving per-tab undo/redo & cursor state),
+    // and sync external document updates within the same tab
     useEffect(() => {
       const view = viewRef.current;
-      if (!view) return;
+      const createState = createStateRef.current;
+      if (!view || !createState) return;
+
+      if (tabId !== currentTabIdRef.current) {
+        tabStatesRef.current.set(currentTabIdRef.current, view.state);
+        currentTabIdRef.current = tabId;
+
+        let nextState = tabStatesRef.current.get(tabId);
+        if (!nextState) {
+          nextState = createState(value);
+          tabStatesRef.current.set(tabId, nextState);
+        } else if (nextState.doc.toString() !== value) {
+          nextState = nextState.update({
+            changes: { from: 0, to: nextState.doc.length, insert: value },
+          }).state;
+          tabStatesRef.current.set(tabId, nextState);
+        }
+        view.setState(nextState);
+        return;
+      }
+
       const currentText = view.state.doc.toString();
       if (value !== currentText) {
         view.dispatch({
           changes: { from: 0, to: currentText.length, insert: value },
         });
       }
-    }, [value]);
+    }, [tabId, value]);
 
     return (
       <div

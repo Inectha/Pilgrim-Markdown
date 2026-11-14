@@ -1,26 +1,59 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { useDocument } from '../context/DocumentContext';
+import { useDocument, DocumentTab } from '../context/DocumentContext';
 import {
   DraftRecord,
-  saveDraft,
-  getDraft,
+  WorkspaceDraftRecord,
   deleteDraft,
   getAllDrafts,
+  saveWorkspaceDraft,
+  getWorkspaceDraft,
+  deleteWorkspaceDraft,
+  getAllWorkspaceDrafts,
 } from '../utils/idb';
+
+export interface RecoverableDraftBanner {
+  id: string;
+  fileName: string;
+  updatedAt: number;
+  kind: 'workspace' | 'legacy';
+  workspaceDraft?: WorkspaceDraftRecord;
+  legacyDraft?: DraftRecord;
+}
+
+function hydrateTabsFromDraft(record: WorkspaceDraftRecord): DocumentTab[] {
+  return record.tabs.map((t) => ({
+    id: t.id,
+    fileName: t.fileName,
+    filePath: t.filePath,
+    content: t.content,
+    savedContent: t.isDirty ? '' : t.content,
+    handle: null,
+    lastKnownModified: t.lastKnownModified,
+    cursorPos: { line: 1, col: 1 },
+  }));
+}
+
+function formatWorkspaceSummary(record: WorkspaceDraftRecord): string {
+  const dirtyTabs = record.tabs.filter((t) => t.isDirty);
+  if (dirtyTabs.length <= 1) {
+    return (dirtyTabs[0] ?? record.tabs[0])?.fileName ?? 'Untitled.md';
+  }
+  return `${dirtyTabs[0].fileName} (+${dirtyTabs.length - 1} more unsaved tab${dirtyTabs.length - 1 > 1 ? 's' : ''})`;
+}
 
 export function useDraftRecovery() {
   const {
     docId,
     reassignDocId,
-    fileName,
-    content,
-    isDirty,
-    lastKnownModified,
+    tabs,
+    activeTabId,
+    anyDirty,
     loadDocument,
+    restoreWorkspaceTabs,
     showToast,
   } = useDocument();
 
-  const [recoverableDraft, setRecoverableDraft] = useState<DraftRecord | null>(null);
+  const [recoverableDraft, setRecoverableDraft] = useState<RecoverableDraftBanner | null>(null);
   const bypassBeforeUnloadRef = useRef<boolean>(false);
   const activeDocIdRef = useRef<string>(docId);
   activeDocIdRef.current = docId;
@@ -29,25 +62,13 @@ export function useDraftRecovery() {
   const checkStartupDrafts = useCallback(
     async (allowOwnDraft: boolean, initialDocId: string) => {
       if (allowOwnDraft) {
-        // 1. Check if this same sessionStorage docId has an active dirty draft (e.g. after SW reload)
-        const ownDraft = await getDraft(initialDocId);
-        if (ownDraft && ownDraft.isDirty) {
-          loadDocument({
-            fileName: ownDraft.fileName,
-            content: ownDraft.content,
-            handle: null,
-            lastModified: ownDraft.lastKnownModified,
-            markDirty: true,
-          });
-          showToast(`Restored draft "${ownDraft.fileName}" after reload.`);
+        const ownWs = await getWorkspaceDraft(initialDocId);
+        if (ownWs && ownWs.tabs.some((t) => t.isDirty)) {
+          restoreWorkspaceTabs(hydrateTabsFromDraft(ownWs), ownWs.activeTabId);
+          showToast(`Restored "${formatWorkspaceSummary(ownWs)}" after reload.`);
           return;
         }
       }
-
-      // 2. Otherwise inspect all drafts and filter out any draft locked by a live window
-      const allDrafts = await getAllDrafts();
-      const dirtyDrafts = allDrafts.filter((d) => d.isDirty && d.docId !== activeDocIdRef.current);
-      if (dirtyDrafts.length === 0) return;
 
       const heldLockNames = new Set<string>();
       if (typeof navigator !== 'undefined' && 'locks' in navigator && navigator.locks?.query) {
@@ -61,12 +82,44 @@ export function useDraftRecovery() {
         }
       }
 
-      const orphaned = dirtyDrafts.find((d) => !heldLockNames.has(`draft-${d.docId}`));
-      if (orphaned) {
-        setRecoverableDraft(orphaned);
+      const allWsDrafts = await getAllWorkspaceDrafts();
+      const orphanedWs = allWsDrafts.find(
+        (d) =>
+          d.workspaceId !== activeDocIdRef.current &&
+          d.tabs.some((t) => t.isDirty) &&
+          !heldLockNames.has(`draft-${d.workspaceId}`)
+      );
+
+      if (orphanedWs) {
+        setRecoverableDraft({
+          id: orphanedWs.workspaceId,
+          fileName: formatWorkspaceSummary(orphanedWs),
+          updatedAt: orphanedWs.updatedAt,
+          kind: 'workspace',
+          workspaceDraft: orphanedWs,
+        });
+        return;
+      }
+
+      // Check legacy single-document drafts
+      const legacyDrafts = await getAllDrafts();
+      const orphanedLegacy = legacyDrafts.find(
+        (d) =>
+          d.isDirty &&
+          d.docId !== activeDocIdRef.current &&
+          !heldLockNames.has(`draft-${d.docId}`)
+      );
+      if (orphanedLegacy) {
+        setRecoverableDraft({
+          id: orphanedLegacy.docId,
+          fileName: orphanedLegacy.fileName,
+          updatedAt: orphanedLegacy.updatedAt,
+          kind: 'legacy',
+          legacyDraft: orphanedLegacy,
+        });
       }
     },
-    [loadDocument, showToast]
+    [restoreWorkspaceTabs, showToast]
   );
 
   // Acquire an exclusive Web Lock for this window's docId (handles tab duplication safely)
@@ -90,7 +143,6 @@ export function useDraftRecovery() {
         async (lock) => {
           if (cancelled) return;
           if (!lock) {
-            // Another live tab/window holds this docId (e.g. duplicated tab) -> generate fresh docId
             const freshId = reassignDocId();
             acquireWindowLock(freshId, true);
             return;
@@ -114,55 +166,59 @@ export function useDraftRecovery() {
     };
   }, [docId, reassignDocId, checkStartupDrafts]);
 
-  // Debounced draft persistence (~500 ms)
+  // Debounced workspace draft persistence (~500 ms)
   useEffect(() => {
-    if (!isDirty) {
-      // Immediately mark clean & delete draft so clean closes never trigger recovery
-      saveDraft({
-        docId,
-        fileName,
-        content,
-        isDirty: false,
-        lastKnownModified,
-        updatedAt: Date.now(),
-      }).then(() => deleteDraft(docId));
+    const buildRecord = (forceClean: boolean): WorkspaceDraftRecord => ({
+      workspaceId: docId,
+      activeTabId,
+      tabs: tabs.map((t) => ({
+        id: t.id,
+        fileName: t.fileName,
+        filePath: t.filePath,
+        content: t.content,
+        isDirty: forceClean ? false : t.content !== t.savedContent,
+        lastKnownModified: t.lastKnownModified,
+      })),
+      updatedAt: Date.now(),
+    });
+
+    if (!anyDirty) {
+      saveWorkspaceDraft(buildRecord(true)).then(() => deleteWorkspaceDraft(docId));
       return;
     }
 
     const timer = window.setTimeout(() => {
-      saveDraft({
-        docId,
-        fileName,
-        content,
-        isDirty: true,
-        lastKnownModified,
-        updatedAt: Date.now(),
-      });
+      void saveWorkspaceDraft(buildRecord(false));
     }, 500);
 
     return () => window.clearTimeout(timer);
-  }, [docId, fileName, content, isDirty, lastKnownModified]);
+  }, [docId, tabs, activeTabId, anyDirty]);
 
-  // Warn before closing a window with unsaved changes
+  // Warn before closing a window with unsaved changes across any tab
   useEffect(() => {
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (isDirty && !bypassBeforeUnloadRef.current) {
+      if (anyDirty && !bypassBeforeUnloadRef.current) {
         e.preventDefault();
         e.returnValue = '';
       }
     };
 
     const onPageHide = () => {
-      if (!isDirty) {
-        saveDraft({
-          docId: activeDocIdRef.current,
-          fileName,
-          content,
-          isDirty: false,
-          lastKnownModified,
+      if (!anyDirty) {
+        void saveWorkspaceDraft({
+          workspaceId: activeDocIdRef.current,
+          activeTabId,
+          tabs: tabs.map((t) => ({
+            id: t.id,
+            fileName: t.fileName,
+            filePath: t.filePath,
+            content: t.content,
+            isDirty: false,
+            lastKnownModified: t.lastKnownModified,
+          })),
           updatedAt: Date.now(),
         });
-        deleteDraft(activeDocIdRef.current);
+        void deleteWorkspaceDraft(activeDocIdRef.current);
       }
     };
 
@@ -172,41 +228,61 @@ export function useDraftRecovery() {
       window.removeEventListener('beforeunload', onBeforeUnload);
       window.removeEventListener('pagehide', onPageHide);
     };
-  }, [isDirty, fileName, content, lastKnownModified]);
+  }, [anyDirty, tabs, activeTabId]);
 
   const restoreRecoverableDraft = useCallback(async () => {
     if (!recoverableDraft) return;
-    loadDocument({
-      fileName: recoverableDraft.fileName,
-      content: recoverableDraft.content,
-      handle: null,
-      lastModified: recoverableDraft.lastKnownModified,
-      markDirty: true,
-    });
-    await deleteDraft(recoverableDraft.docId);
-    setRecoverableDraft(null);
-    showToast(`Restored unsaved draft "${recoverableDraft.fileName}".`);
-  }, [recoverableDraft, loadDocument, showToast]);
+    if (recoverableDraft.kind === 'workspace' && recoverableDraft.workspaceDraft) {
+      const ws = recoverableDraft.workspaceDraft;
+      restoreWorkspaceTabs(hydrateTabsFromDraft(ws), ws.activeTabId);
+      await deleteWorkspaceDraft(ws.workspaceId);
+      setRecoverableDraft(null);
+      showToast(`Restored unsaved draft "${recoverableDraft.fileName}".`);
+      return;
+    }
+    if (recoverableDraft.kind === 'legacy' && recoverableDraft.legacyDraft) {
+      const legacy = recoverableDraft.legacyDraft;
+      loadDocument({
+        fileName: legacy.fileName,
+        content: legacy.content,
+        handle: null,
+        lastModified: legacy.lastKnownModified,
+        markDirty: true,
+      });
+      await deleteDraft(legacy.docId);
+      setRecoverableDraft(null);
+      showToast(`Restored unsaved draft "${legacy.fileName}".`);
+    }
+  }, [recoverableDraft, restoreWorkspaceTabs, loadDocument, showToast]);
 
   const dismissRecoverableDraft = useCallback(async () => {
     if (!recoverableDraft) return;
-    await deleteDraft(recoverableDraft.docId);
+    if (recoverableDraft.kind === 'workspace') {
+      await deleteWorkspaceDraft(recoverableDraft.id);
+    } else {
+      await deleteDraft(recoverableDraft.id);
+    }
     setRecoverableDraft(null);
   }, [recoverableDraft]);
 
   const flushDraftForReload = useCallback(async () => {
     bypassBeforeUnloadRef.current = true;
-    if (isDirty) {
-      await saveDraft({
-        docId,
-        fileName,
-        content,
-        isDirty: true,
-        lastKnownModified,
+    if (anyDirty) {
+      await saveWorkspaceDraft({
+        workspaceId: docId,
+        activeTabId,
+        tabs: tabs.map((t) => ({
+          id: t.id,
+          fileName: t.fileName,
+          filePath: t.filePath,
+          content: t.content,
+          isDirty: t.content !== t.savedContent,
+          lastKnownModified: t.lastKnownModified,
+        })),
         updatedAt: Date.now(),
       });
     }
-  }, [docId, fileName, content, isDirty, lastKnownModified]);
+  }, [docId, tabs, activeTabId, anyDirty]);
 
   return {
     recoverableDraft,

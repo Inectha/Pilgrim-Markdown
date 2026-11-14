@@ -4,7 +4,7 @@ import { useFocusTrap } from '../hooks/useFocusTrap';
 export interface PaletteCommand {
   id: string;
   label: string;
-  category: 'Markdown' | 'File' | 'View' | 'Help';
+  category: 'Vault' | 'Markdown' | 'File' | 'View' | 'Help';
   shortcut?: string;
   description: string;
   run: () => void;

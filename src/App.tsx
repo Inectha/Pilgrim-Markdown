@@ -4,13 +4,17 @@ import { DocumentProvider, useDocument } from './context/DocumentContext';
 import { useTheme } from './hooks/useTheme';
 import { useDraftRecovery } from './hooks/useDraftRecovery';
 import { useFileSystem } from './hooks/useFileSystem';
+import { useVault } from './hooks/useVault';
 import { Titlebar } from './components/Titlebar';
 import { Toolbar } from './components/Toolbar';
+import { TabBar } from './components/TabBar';
+import { VaultSidebar } from './components/VaultSidebar';
 import { Editor, EditorHandle, FormattingAction } from './components/Editor';
 import { Preview, PreviewHandle } from './components/Preview';
 import { StatusBar } from './components/StatusBar';
 import { ConflictModal } from './components/ConflictModal';
 import { HelpModal } from './components/HelpModal';
+import { DriveSyncModal } from './components/DriveSyncModal';
 import { CommandPalette, PaletteCommand } from './components/CommandPalette';
 import { TocItem } from './utils/markdown';
 import { SLASH_COMMANDS } from './utils/commands';
@@ -18,7 +22,12 @@ import { downloadStandaloneHtml, copyForGoogleDocs } from './utils/exportHtml';
 
 const WorkspaceShell: React.FC = () => {
   const {
+    tabs,
+    activeTabId,
+    switchTab,
+    newTab,
     fileName,
+    filePath,
     content,
     setContent,
     viewMode,
@@ -39,14 +48,43 @@ const WorkspaceShell: React.FC = () => {
     dismissRecoverableDraft,
     flushDraftForReload,
   } = useDraftRecovery();
+
+  const openVaultFileRef = useRef<
+    (handle: FileSystemFileHandle, relPath: string) => Promise<void>
+  >(async () => {});
+
+  const {
+    vaultHandle,
+    vaultName,
+    vaultTree,
+    vaultFlatFiles,
+    savedVault,
+    sidebarOpen,
+    setSidebarOpen,
+    isScanning,
+    openVaultPicker,
+    loadDirectoryHandle,
+    reconnectSavedVault,
+    refreshVault,
+    closeVault,
+    createNewFileInVault,
+  } = useVault((handle, relPath) => openVaultFileRef.current(handle, relPath));
+
   const {
     openFile,
     openFromHandle,
     saveFile,
     saveFileAs,
     newDocument,
+    requestCloseTab,
     handleFileDrop,
-  } = useFileSystem();
+  } = useFileSystem((droppedDir) => {
+    void loadDirectoryHandle(droppedDir, true);
+  });
+
+  openVaultFileRef.current = async (handle: FileSystemFileHandle, relPath: string) => {
+    await openFromHandle(handle, true, relPath);
+  };
 
   const {
     needRefresh: [needRefresh, setNeedRefresh],
@@ -60,6 +98,7 @@ const WorkspaceShell: React.FC = () => {
   const [topVisibleLine, setTopVisibleLine] = useState<number>(0);
   const [isDraggingOver, setIsDraggingOver] = useState<boolean>(false);
   const [helpOpen, setHelpOpen] = useState<boolean>(false);
+  const [driveSyncOpen, setDriveSyncOpen] = useState<boolean>(false);
   const [paletteOpen, setPaletteOpen] = useState<boolean>(false);
   const [zenHintVisible, setZenHintVisible] = useState<boolean>(false);
   const [zenScrollbarVisible, setZenScrollbarVisible] = useState<boolean>(false);
@@ -119,7 +158,7 @@ const WorkspaceShell: React.FC = () => {
         setHelpOpen((prev) => !prev);
       } else if (
         (e.ctrlKey || e.metaKey) &&
-        (e.key === '/' || (e.shiftKey && e.key.toLowerCase() === 'p'))
+        (e.key === '/' || e.key.toLowerCase() === 'p')
       ) {
         e.preventDefault();
         setHelpOpen(false);
@@ -142,6 +181,16 @@ const WorkspaceShell: React.FC = () => {
   }, [zenMode, helpOpen, paletteOpen, setZenMode]);
 
   const paletteCommands = useMemo<PaletteCommand[]>(() => {
+    const vaultCmds: PaletteCommand[] = vaultFlatFiles.map((node) => ({
+      id: `vault-file-${node.path}`,
+      label: node.name,
+      category: 'Vault',
+      description: `Open ${node.path} from folder "${vaultName}"`,
+      run: () => {
+        void openFromHandle(node.handle, true, node.path);
+      },
+    }));
+
     const markdownCmds: PaletteCommand[] = SLASH_COMMANDS.map((cmd) => ({
       id: `md-${cmd.id}`,
       label: `Insert ${cmd.label}`,
@@ -154,18 +203,43 @@ const WorkspaceShell: React.FC = () => {
     const appCmds: PaletteCommand[] = [
       {
         id: 'app-new',
-        label: 'New Document',
+        label: 'New Document Tab',
         category: 'File',
-        description: 'Start an empty Markdown document',
+        description: 'Open an empty Markdown document tab',
         run: newDocument,
       },
       {
         id: 'app-open',
-        label: 'Open File...',
+        label: 'Open File(s)...',
         category: 'File',
         shortcut: 'Ctrl+O',
-        description: 'Open a local or Google Drive Markdown file',
-        run: openFile,
+        description: 'Open local or Google Drive Markdown files in tabs',
+        run: () => {
+          void openFile();
+        },
+      },
+      {
+        id: 'app-open-vault',
+        label: 'Open Folder Vault...',
+        category: 'File',
+        description: 'Open a local or Google Drive folder in the sidebar explorer',
+        run: () => {
+          void openVaultPicker();
+        },
+      },
+      {
+        id: 'app-drive-sync',
+        label: 'Google Drive Cloud Sync...',
+        category: 'File',
+        description: 'Sync Markdown files via Google Drive Folder Vault or Drive REST API',
+        run: () => setDriveSyncOpen(true),
+      },
+      {
+        id: 'app-toggle-sidebar',
+        label: 'Toggle Folder Vault Sidebar',
+        category: 'View',
+        description: 'Show or hide the folder file tree sidebar',
+        run: () => setSidebarOpen((prev) => !prev),
       },
       {
         id: 'app-save',
@@ -174,7 +248,7 @@ const WorkspaceShell: React.FC = () => {
         shortcut: 'Ctrl+S',
         description: 'Save changes to disk',
         run: () => {
-          saveFile();
+          void saveFile();
         },
       },
       {
@@ -184,7 +258,7 @@ const WorkspaceShell: React.FC = () => {
         shortcut: 'Ctrl+Shift+S',
         description: 'Save document under a new filename',
         run: () => {
-          saveFileAs();
+          void saveFileAs();
         },
       },
       {
@@ -270,8 +344,13 @@ const WorkspaceShell: React.FC = () => {
       },
     ];
 
-    return [...appCmds, ...markdownCmds];
+    return [...vaultCmds, ...appCmds, ...markdownCmds];
   }, [
+    vaultFlatFiles,
+    vaultName,
+    openFromHandle,
+    openVaultPicker,
+    setSidebarOpen,
     content,
     fileName,
     newDocument,
@@ -314,7 +393,7 @@ const WorkspaceShell: React.FC = () => {
       }}
       onDrop={(e) => {
         setIsDraggingOver(false);
-        handleFileDrop(e);
+        void handleFileDrop(e);
       }}
       className={`flex h-screen w-screen flex-col overflow-hidden bg-[var(--md-surface)] text-[var(--md-on-surface)] ${
         zenMode ? (zenScrollbarVisible ? 'zen-mode zen-scrollbar-visible' : 'zen-mode') : ''
@@ -335,12 +414,27 @@ const WorkspaceShell: React.FC = () => {
         <>
           <Titlebar
             isDark={isDark}
+            sidebarOpen={sidebarOpen}
+            vaultName={vaultName}
+            onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
+            onOpenVaultPicker={() => {
+              void openVaultPicker();
+            }}
+            onOpenDriveSync={() => setDriveSyncOpen(true)}
             onToggleTheme={cycleTheme}
             onNewDocument={newDocument}
-            onOpenFile={openFile}
-            onOpenRecent={openFromHandle}
-            onSaveFile={saveFile}
-            onSaveFileAs={saveFileAs}
+            onOpenFile={() => {
+              void openFile();
+            }}
+            onOpenRecent={(h) => {
+              void openFromHandle(h, true);
+            }}
+            onSaveFile={() => {
+              void saveFile();
+            }}
+            onSaveFileAs={() => {
+              void saveFileAs();
+            }}
             onOpenHelp={() => setHelpOpen(true)}
           />
 
@@ -350,6 +444,18 @@ const WorkspaceShell: React.FC = () => {
             onSelectTocLine={handleSelectTocLine}
             onOpenPalette={() => setPaletteOpen(true)}
           />
+
+          {(tabs.length > 1 || vaultName !== null) && (
+            <TabBar
+              tabs={tabs}
+              activeTabId={activeTabId}
+              onSelectTab={switchTab}
+              onCloseTab={requestCloseTab}
+              onNewTab={() => {
+                newTab();
+              }}
+            />
+          )}
         </>
       )}
 
@@ -357,8 +463,8 @@ const WorkspaceShell: React.FC = () => {
       {recoverableDraft && (
         <div className="no-print flex items-center justify-between gap-3 border-b border-[var(--md-outline-variant)] bg-[var(--md-secondary-container)] px-4 py-2 text-xs text-[var(--md-on-secondary-container)]">
           <span>
-            💡 Found an unsaved draft of <strong>{recoverableDraft.fileName}</strong> (last modified at{' '}
-            {new Date(recoverableDraft.updatedAt).toLocaleTimeString()}).
+            💡 Found an unsaved draft of <strong>{recoverableDraft.fileName}</strong> (last modified
+            at {new Date(recoverableDraft.updatedAt).toLocaleTimeString()}).
           </span>
           <div className="flex shrink-0 items-center gap-2">
             <button
@@ -379,7 +485,7 @@ const WorkspaceShell: React.FC = () => {
         </div>
       )}
 
-      {/* Main Dual-Pane Workspace */}
+      {/* Main Workspace (Optional Vault Sidebar + Dual-Pane Editor/Preview) */}
       <main
         id="editor-workspace"
         onMouseMove={handleWorkspaceMouseMove}
@@ -388,55 +494,86 @@ const WorkspaceShell: React.FC = () => {
         }}
         className="relative flex min-h-0 flex-1 overflow-hidden"
       >
-        {isDraggingOver && (
-          <div className="no-print pointer-events-none absolute inset-3 z-30 flex items-center justify-center rounded-2xl border-2 border-dashed border-[var(--md-primary)] bg-[var(--md-surface)]/85 backdrop-blur-xs">
-            <div className="text-center">
-              <p className="text-sm font-semibold text-[var(--md-primary)]">
-                Drop your Markdown file here to open
-              </p>
-              <p className="mt-1 text-xs text-[var(--md-on-surface-variant)]">
-                Supports direct write access from the ChromeOS Files app
-              </p>
+        {!zenMode && sidebarOpen && (
+          <VaultSidebar
+            vaultName={vaultName}
+            vaultTree={vaultTree}
+            vaultFlatFiles={vaultFlatFiles}
+            savedVault={savedVault}
+            activeFilePath={filePath}
+            isScanning={isScanning}
+            onOpenVaultPicker={() => {
+              void openVaultPicker();
+            }}
+            onReconnectSavedVault={() => {
+              void reconnectSavedVault();
+            }}
+            onSelectFile={(node) => {
+              void openFromHandle(node.handle, true, node.path);
+            }}
+            onCreateFile={createNewFileInVault}
+            onRefreshVault={() => {
+              void refreshVault();
+            }}
+            onCloseVault={closeVault}
+            onCollapseSidebar={() => setSidebarOpen(false)}
+          />
+        )}
+
+        <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
+          {isDraggingOver && (
+            <div className="no-print pointer-events-none absolute inset-3 z-30 flex items-center justify-center rounded-2xl border-2 border-dashed border-[var(--md-primary)] bg-[var(--md-surface)]/85 backdrop-blur-xs">
+              <div className="text-center">
+                <p className="text-sm font-semibold text-[var(--md-primary)]">
+                  Drop Markdown files or a folder here to open
+                </p>
+                <p className="mt-1 text-xs text-[var(--md-on-surface-variant)]">
+                  Supports direct write access and Folder Vaults from ChromeOS Files
+                </p>
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Left Pane: CodeMirror 6 Editor */}
-        {viewMode !== 'preview' && (
-          <section
-            className={`no-print h-full overflow-hidden ${
-              viewMode === 'split'
-                ? 'w-1/2 border-r border-[var(--md-outline-variant)]'
-                : 'editor-only w-full'
-            }`}
-          >
-            <Editor
-              ref={editorRef}
-              value={content}
-              onChange={setContent}
-              onCursorChange={setCursorPos}
-              onTopLineChange={setTopVisibleLine}
-            />
-          </section>
-        )}
+          {/* Left Pane: CodeMirror 6 Editor */}
+          {viewMode !== 'preview' && (
+            <section
+              className={`no-print h-full overflow-hidden ${
+                viewMode === 'split'
+                  ? 'w-1/2 border-r border-[var(--md-outline-variant)]'
+                  : 'editor-only w-full'
+              }`}
+            >
+              <Editor
+                ref={editorRef}
+                tabId={activeTabId}
+                value={content}
+                onChange={setContent}
+                onCursorChange={setCursorPos}
+                onTopLineChange={setTopVisibleLine}
+              />
+            </section>
+          )}
 
-        {/* Right Pane: Sanitized Live Preview */}
-        {viewMode !== 'editor' && (
-          <section
-            className={`preview-section h-full overflow-hidden ${
-              viewMode === 'split' ? 'w-1/2' : 'w-full'
-            }`}
-          >
-            <Preview
-              ref={previewRef}
-              markdown={content}
-              syncScroll={syncScroll}
-              topVisibleLine={topVisibleLine}
-              onTocUpdate={setToc}
-              onToggleTaskLine={handleToggleTaskLine}
-            />
-          </section>
-        )}
+          {/* Right Pane: Sanitized Live Preview */}
+          {viewMode !== 'editor' && (
+            <section
+              className={`preview-section h-full overflow-hidden ${
+                viewMode === 'split' ? 'w-1/2' : 'w-full'
+              }`}
+            >
+              <Preview
+                ref={previewRef}
+                markdown={content}
+                syncScroll={syncScroll}
+                topVisibleLine={topVisibleLine}
+                vaultHandle={vaultHandle}
+                activeFilePath={filePath}
+                onTocUpdate={setToc}
+                onToggleTaskLine={handleToggleTaskLine}
+              />
+            </section>
+          )}
+        </div>
 
         {/* Floating exit Zen mode button (fades out after 2.5s; reappears on corner hover/focus) */}
         {zenMode && (
@@ -504,6 +641,14 @@ const WorkspaceShell: React.FC = () => {
         isOpen={helpOpen}
         onClose={() => setHelpOpen(false)}
         onInsertExample={(snippet) => editorRef.current?.insertSnippet(snippet)}
+      />
+
+      <DriveSyncModal
+        isOpen={driveSyncOpen}
+        onClose={() => setDriveSyncOpen(false)}
+        onOpenVaultPicker={() => {
+          void openVaultPicker();
+        }}
       />
 
       <CommandPalette

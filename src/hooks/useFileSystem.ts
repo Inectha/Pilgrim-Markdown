@@ -173,7 +173,8 @@ export function useFileSystem(onDropDirectoryHandle?: (dirHandle: FileSystemDire
     async (
       textToSave: string,
       suggestedName?: string,
-      targetTabId?: string
+      targetTabId?: string,
+      promptNameIfFallback: boolean = false
     ): Promise<boolean> => {
       const targetName = suggestedName || stateRef.current.fileName || 'Untitled.md';
 
@@ -206,15 +207,24 @@ export function useFileSystem(onDropDirectoryHandle?: (dirHandle: FileSystemDire
         }
       }
 
-      downloadBlobFallback(textToSave, targetName);
+      let finalName = targetName;
+      if (promptNameIfFallback && typeof window.prompt === 'function') {
+        const entered = window.prompt('Save file as:', targetName);
+        if (entered === null) return false;
+        const trimmed = entered.trim();
+        if (!trimmed) return false;
+        finalName = /\.(md|markdown|txt)$/i.test(trimmed) ? trimmed : `${trimmed}.md`;
+      }
+
+      downloadBlobFallback(textToSave, finalName);
       markSaved({
         tabId: targetTabId,
-        fileName: targetName,
+        fileName: finalName,
         handle: null,
         lastModified: Date.now(),
         savedText: textToSave,
       });
-      showToast(`Downloaded "${targetName}".`);
+      showToast(`Saved as "${finalName}".`);
       return true;
     },
     [markSaved, recordRecentHandle, showToast]
@@ -242,7 +252,8 @@ export function useFileSystem(onDropDirectoryHandle?: (dirHandle: FileSystemDire
     return saveFileAsInternal(
       stateRef.current.content,
       stateRef.current.fileName,
-      stateRef.current.activeTabId
+      stateRef.current.activeTabId,
+      true
     );
   }, [saveFileAsInternal]);
 

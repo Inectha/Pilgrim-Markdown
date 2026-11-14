@@ -52,11 +52,13 @@ export const Titlebar: React.FC<TitlebarProps> = ({
     Boolean(typeof navigator !== 'undefined' && navigator.windowControlsOverlay?.visible)
   );
   const [recentMenuOpen, setRecentMenuOpen] = useState<boolean>(false);
+  const [saveMenuOpen, setSaveMenuOpen] = useState<boolean>(false);
   const [exportMenuOpen, setExportMenuOpen] = useState<boolean>(false);
   const [editingName, setEditingName] = useState<boolean>(false);
   const [nameDraft, setNameDraft] = useState<string>(fileName);
 
   const recentRef = useRef<HTMLDivElement | null>(null);
+  const saveRef = useRef<HTMLDivElement | null>(null);
   const exportRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -80,6 +82,9 @@ export const Titlebar: React.FC<TitlebarProps> = ({
       if (recentRef.current && !recentRef.current.contains(target)) {
         setRecentMenuOpen(false);
       }
+      if (saveRef.current && !saveRef.current.contains(target)) {
+        setSaveMenuOpen(false);
+      }
       if (exportRef.current && !exportRef.current.contains(target)) {
         setExportMenuOpen(false);
       }
@@ -87,6 +92,7 @@ export const Titlebar: React.FC<TitlebarProps> = ({
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setRecentMenuOpen(false);
+        setSaveMenuOpen(false);
         setExportMenuOpen(false);
       }
     };
@@ -348,14 +354,55 @@ export const Titlebar: React.FC<TitlebarProps> = ({
           )}
         </div>
 
-        <button
-          type="button"
-          onClick={onSaveFile}
-          title="Save (Ctrl+S)"
-          className="rounded-full bg-[var(--md-primary)] px-3 py-1.5 text-xs font-medium text-[var(--md-on-primary)] shadow-sm transition-opacity hover:opacity-90"
-        >
-          Save
-        </button>
+        {/* Save + Save As Split Button */}
+        <div ref={saveRef} className="relative flex items-center">
+          <button
+            type="button"
+            onClick={onSaveFile}
+            title="Save (Ctrl+S)"
+            className="rounded-l-full bg-[var(--md-primary)] px-3 py-1.5 text-xs font-medium text-[var(--md-on-primary)] shadow-sm transition-opacity hover:opacity-90"
+          >
+            Save
+          </button>
+          <button
+            type="button"
+            onClick={() => setSaveMenuOpen((prev) => !prev)}
+            aria-label="Save options (Save As)"
+            aria-expanded={saveMenuOpen}
+            aria-haspopup="menu"
+            title="Save As (Ctrl+Shift+S)"
+            className="rounded-r-full border-l border-white/25 bg-[var(--md-primary)] px-2 py-1.5 text-xs font-medium text-[var(--md-on-primary)] shadow-sm transition-opacity hover:opacity-90"
+          >
+            ▾
+          </button>
+
+          {saveMenuOpen && (
+            <div className="absolute right-0 top-full z-40 mt-1.5 w-56 rounded-xl border border-[var(--md-outline-variant)] bg-[var(--md-surface-container)] p-1.5 shadow-lg">
+              <button
+                type="button"
+                onClick={() => {
+                  setSaveMenuOpen(false);
+                  onSaveFile();
+                }}
+                className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs text-[var(--md-on-surface)] hover:bg-[var(--md-surface-variant)]"
+              >
+                <span>Save</span>
+                <kbd className="text-[10px] text-[var(--md-on-surface-variant)]">Ctrl+S</kbd>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSaveMenuOpen(false);
+                  onSaveFileAs();
+                }}
+                className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-[var(--md-on-surface)] hover:bg-[var(--md-surface-variant)]"
+              >
+                <span>Save As…</span>
+                <kbd className="text-[10px] text-[var(--md-on-surface-variant)]">Ctrl+Shift+S</kbd>
+              </button>
+            </div>
+          )}
+        </div>
 
         {/* Export, Share & Responsive Overflow Menu */}
         <div ref={exportRef} className="relative">
